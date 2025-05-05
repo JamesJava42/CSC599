@@ -1,0 +1,27 @@
+# Core Python packages
+pandas
+numpy
+scikit-learn
+matplotlib
+seaborn
+
+# NLP & Tokenization
+nltk
+spacy
+
+# Transformers & LLMs
+transformers
+datasets
+torch
+sentencepiece
+
+# For visualization and confusion matrix
+scikit-plot
+plotly
+
+# For training and evaluation
+evaluate
+
+# Optional: for progress bars and logging
+tqdm
+loguru

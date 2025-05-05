@@ -1,79 +1,113 @@
+from sklearn.svm import SVC
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.utils import class_weight
+from transformers import Trainer, TrainingArguments, AutoModelForSequenceClassification
+import numpy as np
+import time
 import torch
-import pandas as pd
-from torch.utils.data import Dataset, DataLoader
-from transformers import Trainer, TrainingArguments
-from sklearn.model_selection import train_test_split
-from Tokenzation import get_tokenizer_model  # Fixed import
+import matplotlib.pyplot as plt
+import joblib
 
-class MedicalDataset(Dataset):
-    def __init__(self, texts, labels, tokenizer, max_length=512):
-        self.texts = texts
-        self.labels = labels
-        self.tokenizer = tokenizer
-        self.max_length = max_length
-
-    def __len__(self):
-        return len(self.texts)
-
-    def __getitem__(self, idx):
-        text = str(self.texts[idx])
-        label = self.labels[idx]
-        encoding = self.tokenizer(
-            text, 
-            padding="max_length",
-            truncation=True,
-            max_length=self.max_length,
-            return_tensors="pt"
-        )
-        return {
-            "input_ids": encoding["input_ids"].squeeze(),
-            "attention_mask": encoding["attention_mask"].squeeze(),
-            "labels": torch.tensor(label, dtype=torch.long)
-        }
-
-def train_llm():
-    try:
-        df = pd.read_csv("preprocessed_medical_data.csv")
-        tokenizer, model = get_tokenizer_model()
+class ModelTrainer:
+    def __init__(self):
+        self.training_history = []
+    
+    def train_svm(self, X_train, y_train, C=1.0, kernel='linear'):
+        print("\n[3/5] Training SVM classifier...")
+        start_time = time.time()
         
-        # Split data
-        train_texts, test_texts, train_labels, test_labels = train_test_split(
-            df['clean_text'].tolist(),
-            df['label'].tolist(),
-            test_size=0.2,
+        classes, counts = np.unique(y_train, return_counts=True)
+        weights = class_weight.compute_class_weight(
+            'balanced',
+            classes=classes,
+            y=y_train
+        )
+        class_weights = dict(zip(classes, weights))
+        
+        model = SVC(
+            C=C,
+            kernel=kernel,
+            class_weight=class_weights,
             random_state=42,
-            stratify=df['label']
+            probability=True,
+            decision_function_shape='ovr'
+        )
+        model.fit(X_train, y_train)
+        
+        print(f"Training time: {time.time()-start_time:.1f}s")
+        return model
+
+    def train_naive_bayes(self, X_train, y_train):
+        print("\n[3/5] Training Naive Bayes classifier...")
+        start_time = time.time()
+        model = MultinomialNB()
+        model.fit(X_train, y_train)
+        print(f"Training time: {time.time()-start_time:.1f}s")
+        return model
+
+    def train_random_forest(self, X_train, y_train):
+        print("\n[3/5] Training Random Forest classifier...")
+        start_time = time.time()
+        model = RandomForestClassifier(
+            class_weight='balanced',
+            random_state=42,
+            n_estimators=100
+        )
+        model.fit(X_train, y_train)
+        print(f"Training time: {time.time()-start_time:.1f}s")
+        return model
+
+    def train_bert(self, dataset, model_name="emilyalsentzer/Bio_ClinicalBERT", num_labels=2):
+        print(f"\n[4/5] Initializing {model_name} model...")
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_name, 
+            num_labels=num_labels
         )
         
-        # Create datasets
-        train_dataset = MedicalDataset(train_texts, train_labels, tokenizer)
-        test_dataset = MedicalDataset(test_texts, test_labels, tokenizer)
-        
-        # Training configuration
         training_args = TrainingArguments(
-            output_dir="./results",
-            evaluation_strategy="epoch",
-            save_strategy="epoch",
-            per_device_train_batch_size=4,  # Reduced for medical text length
-            per_device_eval_batch_size=4,
+            output_dir='./results',
             num_train_epochs=3,
+            per_device_train_batch_size=2,
+            per_device_eval_batch_size=2,
+            evaluation_strategy="epoch",
+            logging_steps=10,
             learning_rate=2e-5,
             weight_decay=0.01,
-            logging_dir="./logs",
-            logging_steps=50,
-            fp16=True  # Enable mixed precision
+            save_strategy="epoch",
+            load_best_model_at_end=True
         )
         
         trainer = Trainer(
             model=model,
             args=training_args,
-            train_dataset=train_dataset,
-            eval_dataset=test_dataset
+            train_dataset=dataset['train'],
+            eval_dataset=dataset['test']
         )
         
-        trainer.train()
+        print("Beginning fine-tuning...")
+        training_result = trainer.train()
+        self.plot_training_curve(training_result)
         return trainer
+
+    def plot_training_curve(self, training_result):
+        plt.figure(figsize=(10, 6))
+        losses = [log['loss'] for log in training_result.state.log_history if 'loss' in log]
+        plt.plot(losses, label='Training Loss')
+        plt.title("LLM Training Progress")
+        plt.xlabel("Training Steps")
+        plt.ylabel("Loss")
+        plt.legend()
+        plt.grid(True)
+        plt.savefig("training_curve.png")
+        print("Saved training curve visualization: training_curve.png")
+
+    def save_model(self, model, model_type='svm', path='./models'):
+        import os
+        os.makedirs(path, exist_ok=True)
         
-    except Exception as e:
-        print(f"Training failed: {str(e)}")
-        return None
+        if model_type == 'svm':
+            joblib.dump(model, f"{path}/svm_model.pkl")
+        elif model_type == 'bert':
+            model.save_pretrained(f"{path}/bert_model")
+        print(f"Saved {model_type.upper()} model to {path}")

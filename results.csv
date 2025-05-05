@@ -1,0 +1,5 @@
+Model,Metric,Score
+ClinicalBERT,Accuracy,0.83
+ClinicalBERT,F1-score,0.81
+TFIDF-SVM,Accuracy,0.72
+TFIDF-SVM,F1-score,0.70

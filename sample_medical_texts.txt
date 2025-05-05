@@ -1,0 +1,5 @@
+Patient exhibits signs of carcinoma with persistent cough and weight loss.
+MRI scan indicates a benign tumor in the frontal lobe.
+No malignant cells were detected in the biopsy report.
+Signs of metastasis present; high-grade neoplasm suspected.
+Diagnosis consistent with non-cancerous inflammation of lymph nodes.

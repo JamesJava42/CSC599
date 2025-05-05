@@ -1,58 +1,46 @@
 import pandas as pd
+import re
 import nltk
+import os
+import numpy as np
 from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
-from nltk.stem import WordNetLemmatizer
-from sklearn.preprocessing import LabelEncoder
+from nltk.stem import PorterStemmer, WordNetLemmatizer
 
-def preprocess_data(input_file="Independent_Medical_Reviews.csv"):
-    try:
-        nltk.download(['stopwords', 'punkt', 'wordnet'])
+class DataPreprocessor:
+    def __init__(self):
+        nltk.download('stopwords', quiet=True)
+        nltk.download('wordnet', quiet=True)
+        self.stop_words = set(stopwords.words('english'))
+        self.stemmer = PorterStemmer()
+        self.lemmatizer = WordNetLemmatizer()
+    
+    def clean_text(self, text: str) -> str:
+        text = str(text).lower()
+        text = re.sub(r'[^a-zA-Z\s]', '', text)
+        words = text.split()
+        words = [word for word in words if word not in self.stop_words]
+        words = [self.stemmer.stem(word) for word in words]
+        words = [self.lemmatizer.lemmatize(word) for word in words]
+        return ' '.join(words)
+    
+    def load_and_preprocess(self, data_path: str) -> pd.DataFrame:
+        print(f"\n[1/5] Loading dataset from {os.path.abspath(data_path)}")
         
-        # Load and verify data
-        df = pd.read_csv(input_file)
-        print("Original columns:", df.columns.tolist())
-        
-        # Column mapping based on your data structure
-        df = df.rename(columns={
-            "Findings": "text",
-            "Diagnosis Category": "label"
-        })
+        if not os.path.exists(data_path):
+            raise FileNotFoundError(f"File not found: {os.path.abspath(data_path)}")
+            
+        df = pd.read_csv(data_path).head(20)
         
         # Validate required columns
-        if not {'text', 'label'}.issubset(df.columns):
-            missing = {'text', 'label'} - set(df.columns)
-            raise ValueError(f"Missing required columns: {missing}")
-
-        # Clean data
-        df = df.dropna(subset=['text', 'label'])
-        df['text'] = df['text'].str.strip()
+        required_columns = ['Findings', 'Determination']
+        missing_cols = [col for col in required_columns if col not in df.columns]
+        if missing_cols:
+            raise KeyError(f"Missing columns: {missing_cols}")
+            
+        # Clean and preprocess
+        df['processed_text'] = df['Findings'].apply(self.clean_text).replace('', np.nan)
+        df = df.dropna(subset=['processed_text'])
         
-        # Text preprocessing
-        stop_words = set(stopwords.words('english'))
-        lemmatizer = WordNetLemmatizer()
-        
-        def clean_text(text):
-            text = text.lower()
-            tokens = word_tokenize(text)
-            tokens = [lemmatizer.lemmatize(word) for word in tokens 
-                     if word.isalpha() and word not in stop_words]
-            return " ".join(tokens)
-        
-        df['clean_text'] = df['text'].apply(clean_text)
-        
-        # Label encoding
-        le = LabelEncoder()
-        df['label'] = le.fit_transform(df['label'])
-        
-        # Save processed data
-        df.to_csv("preprocessed_medical_data.csv", index=False)
-        print("Preprocessing completed successfully!")
-        return df
-        
-    except Exception as e:
-        print(f"Preprocessing failed: {str(e)}")
-        return None
-
-if __name__ == "__main__":
-    preprocess_data()
+        print("\nSample preprocessed data:")
+        print(df[['Findings', 'processed_text', 'Determination']].head(2))
+        return df[['processed_text', 'Determination']]
